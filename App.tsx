@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Upload, Download, Globe, Image as ImageIcon, Search, Save, Trash2, X, Plus, ChevronLeft, ChevronRight, ArrowDownToLine } from 'lucide-react';
+import { Upload, Download, Globe, Image as ImageIcon, Search, Trash2, X, Plus, ChevronLeft, ChevronRight, ArrowDownToLine } from 'lucide-react';
 import { Button } from './components/Button';
 import { parseTsFile, generateTsFile, flattenSection, unflattenData } from './services/parser';
-import { SectionData, ParsedFile, FileMetadata } from './types';
+import { SectionData, FileMetadata } from './types';
 
 function App() {
   const [zhFile, setZhFile] = useState<File | null>(null);
@@ -127,7 +127,8 @@ function App() {
     // Helper download function
     const download = (filename: string, content: string) => {
       const blob = new Blob([content], { type: 'text/plain' });
-      const url = URL.createObjectURL(blob);
+      // Fix: Cast blob to any to resolve TypeScript error about unknown type
+      const url = URL.createObjectURL(blob as any);
       const a = document.createElement('a');
       a.href = url;
       a.download = filename;
