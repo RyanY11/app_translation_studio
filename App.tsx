@@ -1,8 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Upload, Download, Globe, Image as ImageIcon, Search, Save, Trash2, Wand2, X, Plus, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Upload, Download, Globe, Image as ImageIcon, Search, Save, Trash2, X, Plus, ChevronLeft, ChevronRight, ArrowDownToLine } from 'lucide-react';
 import { Button } from './components/Button';
 import { parseTsFile, generateTsFile, flattenSection, unflattenData } from './services/parser';
-import { translateText, batchTranslate } from './services/gemini';
 import { SectionData, ParsedFile, FileMetadata } from './types';
 
 function App() {
@@ -23,6 +22,20 @@ function App() {
   const zhInputRef = useRef<HTMLInputElement>(null);
   const enInputRef = useRef<HTMLInputElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
+
+  // Derived State (Moved up to be accessible by handlers)
+  const activeSection = sections.find(s => s.id === selectedSectionId);
+  const filteredItems = activeSection?.items.filter(item => 
+    item.key.toLowerCase().includes(searchQuery.toLowerCase()) || 
+    item.zh.includes(searchQuery) || 
+    item.en.includes(searchQuery)
+  );
+
+  const stats = sections.reduce((acc, curr) => {
+      acc.total += curr.items.length;
+      acc.translated += curr.items.filter(i => i.en).length;
+      return acc;
+  }, { total: 0, translated: 0 });
 
   // Reset active screenshot when section changes
   useEffect(() => {
@@ -114,8 +127,7 @@ function App() {
     // Helper download function
     const download = (filename: string, content: string) => {
       const blob = new Blob([content], { type: 'text/plain' });
-      // Fix: Cast blob to any to resolve TypeScript error about unknown type
-      const url = URL.createObjectURL(blob as any);
+      const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
       a.download = filename;
@@ -174,68 +186,36 @@ function App() {
     }
   };
 
-  const handleAutoTranslate = async (itemKey: string, sourceText: string) => {
-    if (!sourceText) return;
-    try {
-        const translated = await translateText(sourceText, "English");
-        if (selectedSectionId) {
-            handleUpdateItem(selectedSectionId, itemKey, 'en', translated);
+  const handleFindNextEmpty = () => {
+    if (!filteredItems) return;
+    
+    // Find the first item where English is empty or just whitespace
+    const emptyItem = filteredItems.find(item => !item.en || item.en.trim() === '');
+    
+    if (emptyItem) {
+        const elementId = `input-en-${emptyItem.key}`;
+        const element = document.getElementById(elementId);
+        if (element) {
+            element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            element.focus();
         }
-    } catch (e) {
-        alert("Translation failed. Check console or API Key.");
+    } else {
+        alert("Great job! No empty translations found in this list.");
     }
-  };
-
-  const handleBatchTranslateSection = async () => {
-      if (!selectedSectionId) return;
-      const section = sections.find(s => s.id === selectedSectionId);
-      if (!section) return;
-
-      const missingItems = section.items.filter(i => !i.en && i.zh);
-      if (missingItems.length === 0) {
-          alert("No empty English fields to translate in this section.");
-          return;
-      }
-
-      setIsProcessing(true);
-      try {
-          const sources = missingItems.map(i => i.zh);
-          const translations = await batchTranslate(sources);
-          
-          setSections(prev => prev.map(sec => {
-              if (sec.id !== selectedSectionId) return sec;
-              
-              const newItems = [...sec.items];
-              missingItems.forEach((item, idx) => {
-                  const targetIndex = newItems.findIndex(x => x.key === item.key);
-                  if (targetIndex !== -1 && translations[idx]) {
-                      newItems[targetIndex] = { ...newItems[targetIndex], en: translations[idx] };
-                  }
-              });
-              return { ...sec, items: newItems };
-          }));
-
-      } catch (e) {
-          alert("Batch translation failed.");
-      } finally {
-          setIsProcessing(false);
-      }
   };
 
   // Carousel Navigation
   const nextImage = useCallback(() => {
-    const activeSection = sections.find(s => s.id === selectedSectionId);
     if (activeSection && activeSection.screenshots.length > 0) {
         setActiveScreenshotIndex((prev) => (prev + 1) % activeSection.screenshots.length);
     }
-  }, [sections, selectedSectionId]);
+  }, [activeSection]);
 
   const prevImage = useCallback(() => {
-    const activeSection = sections.find(s => s.id === selectedSectionId);
     if (activeSection && activeSection.screenshots.length > 0) {
         setActiveScreenshotIndex((prev) => (prev - 1 + activeSection.screenshots.length) % activeSection.screenshots.length);
     }
-  }, [sections, selectedSectionId]);
+  }, [activeSection]);
 
   const handleTouchStart = (e: React.TouchEvent) => {
       touchStartX.current = e.touches[0].clientX;
@@ -264,20 +244,6 @@ function App() {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isLightboxOpen, prevImage, nextImage]);
-
-  // Render Logic
-  const activeSection = sections.find(s => s.id === selectedSectionId);
-  const filteredItems = activeSection?.items.filter(item => 
-    item.key.toLowerCase().includes(searchQuery.toLowerCase()) || 
-    item.zh.includes(searchQuery) || 
-    item.en.includes(searchQuery)
-  );
-
-  const stats = sections.reduce((acc, curr) => {
-      acc.total += curr.items.length;
-      acc.translated += curr.items.filter(i => i.en).length;
-      return acc;
-  }, { total: 0, translated: 0 });
 
   // Initial Upload Screen
   if (sections.length === 0) {
@@ -395,12 +361,11 @@ function App() {
                         <Button 
                             variant="secondary" 
                             size="sm" 
-                            icon={<Wand2 size={14} />} 
-                            onClick={handleBatchTranslateSection}
-                            disabled={isProcessing}
-                            title="Translate all empty English fields in this section"
+                            icon={<ArrowDownToLine size={14} />} 
+                            onClick={handleFindNextEmpty}
+                            title="Scroll to next empty English field"
                         >
-                           Fill Empty
+                           Next Empty
                         </Button>
                     </div>
                 </div>
@@ -420,16 +385,9 @@ function App() {
                             <div className="space-y-1 relative group">
                                 <label className="block text-xs font-semibold text-purple-400 uppercase flex justify-between">
                                     <span>English</span>
-                                    {(!item.en && item.zh) && (
-                                        <button 
-                                            onClick={() => handleAutoTranslate(item.key, item.zh)}
-                                            className="text-blue-600 hover:text-blue-700 cursor-pointer flex items-center gap-1"
-                                        >
-                                            <Wand2 size={10} /> Translate
-                                        </button>
-                                    )}
                                 </label>
                                 <textarea
+                                    id={`input-en-${item.key}`}
                                     className={`w-full p-3 bg-white border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 min-h-[80px] ${!item.en ? 'border-red-200 bg-red-50/30' : 'border-slate-200'}`}
                                     value={item.en}
                                     onChange={(e) => handleUpdateItem(activeSection!.id, item.key, 'en', e.target.value)}
