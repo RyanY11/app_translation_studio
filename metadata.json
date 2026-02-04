@@ -1,0 +1,5 @@
+{
+  "name": "App Translation Master Studio",
+  "description": "A visual editor for managing internationalization TypeScript files with screenshot context and side-by-side editing.",
+  "requestFramePermissions": []
+}
